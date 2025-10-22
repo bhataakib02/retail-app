@@ -1,0 +1,45 @@
+{% extends "layout.html" %}
+{% block title %}Checkout{% endblock %}
+
+{% block content %}
+<div class="container py-5">
+  <div class="row justify-content-center">
+    <div class="col-md-6">
+
+      <div class="card shadow-lg rounded-4">
+        <div class="card-header bg-primary text-white text-center">
+          <h4 class="mb-0"><i class="fas fa-credit-card me-2"></i> Checkout for Order #{{ order_id }}</h4>
+        </div>
+
+        <div class="card-body">
+          <form method="POST" action="{{ url_for('checkout') }}">
+            <div class="mb-4">
+              <label class="form-label">Select Payment Method:</label>
+              <div class="form-check">
+                <input class="form-check-input" type="radio" name="payment_method" id="cash" value="Cash" checked>
+                <label class="form-check-label" for="cash">
+                  <i class="fas fa-money-bill-wave me-1"></i> Cash
+                </label>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input" type="radio" name="payment_method" id="online" value="Online">
+                <label class="form-check-label" for="online">
+                  <i class="fas fa-globe me-1"></i> Online
+                </label>
+              </div>
+            </div>
+
+            <div class="d-grid">
+              <button type="submit" class="btn btn-success rounded-pill">
+                <i class="fas fa-check-circle me-2"></i> Confirm Payment
+              </button>
+            </div>
+          </form>
+        </div>
+
+      </div>
+
+    </div>
+  </div>
+</div>
+{% endblock %}

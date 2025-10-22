@@ -1,0 +1,33 @@
+{% extends "layout.html" %}
+{% block title %}Edit Product{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2>Edit Product</h2>
+    <form method="POST" enctype="multipart/form-data">
+        <div class="mb-3">
+            <label for="name">Product Name</label>
+            <input type="text" name="name" value="{{ product.name }}" class="form-control" required>
+        </div>
+        <div class="mb-3">
+            <label for="description">Description</label>
+            <textarea name="description" class="form-control" required>{{ product.description }}</textarea>
+        </div>
+        <div class="mb-3">
+            <label for="price">Price</label>
+            <input type="number" name="price" step="0.01" value="{{ product.price }}" class="form-control" required>
+        </div>
+        <div class="mb-3">
+            <label for="stock">Stock</label>
+            <input type="number" name="stock" value="{{ product.stock }}" class="form-control" required>
+        </div>
+        <div class="mb-3">
+            <label for="image">Product Image (leave empty to keep current)</label>
+            <input type="file" name="image" accept="image/*" class="form-control">
+            <small>Current: <img src="{{ url_for('static', filename='images/products/' ~ product.image) }}" width="60"></small>
+        </div>
+        <button type="submit" class="btn btn-success">Save Changes</button>
+        <a href="{{ url_for('admin_dashboard') }}" class="btn btn-secondary">Cancel</a>
+    </form>
+</div>
+{% endblock %}

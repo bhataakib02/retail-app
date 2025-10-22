@@ -1,0 +1,19 @@
+/* static/style.css */
+body {
+    background-color: #f9f9f9;
+}
+
+.navbar-brand {
+    font-weight: bold;
+}
+
+.btn-primary, .btn-success, .btn-danger {
+    border-radius: 30px;
+    padding: 10px 20px;
+    font-weight: 500;
+}
+
+.card {
+    box-shadow: 0 0 10px rgba(0,0,0,0.1);
+    border: none;
+}
