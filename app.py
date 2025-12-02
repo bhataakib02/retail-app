@@ -1,11 +1,14 @@
 
+import pymysql
+pymysql.install_as_MySQLdb()
+
 import os
 from werkzeug.utils import secure_filename
 from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify
+
+# Now import the Flask-MySQLdb wrapper (it will find MySQLdb provided by PyMySQL)
 from flask_mysqldb import MySQL
 import MySQLdb.cursors
-import pymysql
-pymysql.install_as_MySQLdb()
 
 app = Flask(__name__)
 app.secret_key = 'your_secret_key'
