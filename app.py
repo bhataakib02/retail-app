@@ -1,21 +1,30 @@
-# ===== START: PyMySQL shim + SQLAlchemy + legacy mysql compatibility =====
+# app.py - corrected and ready for Aiven MySQL (PyMySQL shim + SQLAlchemy TLS)
 import os
 import pymysql
-pymysql.install_as_MySQLdb()   # makes a MySQLdb module available (pure Python)
+pymysql.install_as_MySQLdb()  # make PyMySQL present as MySQLdb for legacy code
 
-from flask import Flask, g
+from flask import (
+    Flask, g, render_template, request, redirect, session, url_for,
+    flash, jsonify
+)
+from werkzeug.utils import secure_filename
+
+# MySQLdb will be available because we installed the shim above
+import MySQLdb
+import MySQLdb.cursors
+
+# SQLAlchemy + helper to safely modify URL
 from flask_sqlalchemy import SQLAlchemy
-from flask import Flask, render_template, request, redirect, session, url_for
+from sqlalchemy.engine import make_url
 
-# create Flask app
+# create app
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "change_me_in_prod")
 
-# Configure SQLAlchemy from DATABASE_URL environment variable (recommended)
-# Example: mysql+pymysql://user:pass@host:port/dbname?ssl-mode=REQUIRED
+# -------------------- DATABASE / SQLALCHEMY TLS CONFIG --------------------
+# Priority: use DATABASE_URL (recommended). If not present, fallback to individual env vars.
 database_url = os.environ.get("DATABASE_URL")
 if not database_url:
-    # fallback to individual vars if you use them (not recommended in production)
     DB_USER = os.environ.get("DB_USER", "root")
     DB_PASS = os.environ.get("DB_PASS", "")
     DB_HOST = os.environ.get("DB_HOST", "127.0.0.1")
@@ -23,33 +32,54 @@ if not database_url:
     DB_NAME = os.environ.get("DB_NAME", "retail_db")
     database_url = f"mysql+pymysql://{DB_USER}:{DB_PASS}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
 
+# Remove "ssl-mode" query param (some drivers try to pass it as a keyword and cause errors).
+# Then enable TLS for PyMySQL via connect_args.
+try:
+    url_obj = make_url(database_url)
+    qdict = dict(url_obj.query)  # copy to mutable dict
+    qdict.pop("ssl-mode", None)  # remove if present
+    # Rebuild URL with cleaned query
+    url_obj = url_obj._replace(query=qdict)
+    database_url = str(url_obj)
+except Exception:
+    # If parsing fails for any reason, fall back to raw database_url and still set connect_args.
+    pass
+
+# Configure Flask-SQLAlchemy to use TLS (empty dict triggers TLS handshake) and timeout.
 app.config["SQLALCHEMY_DATABASE_URI"] = database_url
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
+    "connect_args": {"ssl": {}, "connect_timeout": 10}
+}
+
+# init SQLAlchemy
 db = SQLAlchemy(app)
 
-# Legacy DB connection factory that returns a MySQLdb-compatible connection (PyMySQL provides MySQLdb)
+# -------------------- Legacy MySQLdb compatibility shim --------------------
 def get_legacy_db_conn():
-    import MySQLdb
+    """
+    Return a MySQLdb connection (PyMySQL provides MySQLdb after install_as_MySQLdb()).
+    Reads DB connection info from environment when available.
+    """
+    # derive fallback values
+    fallback_db = (os.environ.get("DB_NAME") or
+                   (database_url.rsplit("/", 1)[-1] if "/" in database_url else "retail_db"))
     conn = MySQLdb.connect(
-        host=os.environ.get("DB_HOST", DB_HOST if 'DB_HOST' in locals() else "127.0.0.1"),
-        user=os.environ.get("DB_USER", DB_USER if 'DB_USER' in locals() else "root"),
-        passwd=os.environ.get("DB_PASS", DB_PASS if 'DB_PASS' in locals() else ""),
-        db=os.environ.get("DB_NAME", DB_NAME if 'DB_NAME' in locals() else database_url.rsplit("/", 1)[-1]),
-        port=int(os.environ.get("DB_PORT", DB_PORT if 'DB_PORT' in locals() else 3306)),
-        connect_timeout=5,
+        host=os.environ.get("DB_HOST", os.environ.get("DB_HOST", "127.0.0.1")),
+        user=os.environ.get("DB_USER", os.environ.get("DB_USER", "root")),
+        passwd=os.environ.get("DB_PASS", os.environ.get("DB_PASS", "")),
+        db=os.environ.get("DB_NAME", fallback_db),
+        port=int(os.environ.get("DB_PORT", os.environ.get("DB_PORT", 3306))),
+        connect_timeout=10,
         charset="utf8mb4",
         use_unicode=True
     )
     return conn
 
-# Request-scoped connection stored on flask.g (automatically closed)
 def get_request_conn():
     if not hasattr(g, "db_conn"):
         g.db_conn = get_legacy_db_conn()
     return g.db_conn
-
-from flask import has_request_context
-from flask import request
 
 @app.teardown_appcontext
 def close_request_conn(exception=None):
@@ -60,30 +90,29 @@ def close_request_conn(exception=None):
     except Exception:
         pass
 
-# Compatibility object exposing .connection so existing code works: mysql.connection.cursor()
 class MySQLCompat:
+    """Compatibility object so existing code using `mysql.connection.cursor()` keeps working."""
     @property
     def connection(self):
         return get_request_conn()
 
-# instantiate
+# instantiate compatibility object
 mysql = MySQLCompat()
 
-# helper for allowed files (you probably already have this lower in the file)
+# -------------------- File upload helper --------------------
 UPLOAD_FOLDER = 'static/images/products'
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
-# simple health route (keeps it here so it exists even before other imports)
+# -------------------- Simple health endpoint --------------------
 @app.route("/_health")
 def _health():
     return {"status": "ok"}, 200
 
-# ===== END shim =====
-
-# ------------------ AUTH ------------------
-
+# -------------------- ROUTES (auth / dashboards / products / cart / orders) --------------------
 @app.route('/')
 def index():
     return render_template('index.html')
@@ -113,9 +142,9 @@ def login():
             session['loggedin'] = True
             session['id'] = user['id']
             session['username'] = user['username']
-            session['role'] = user['role']
-            session['is_admin'] = 1 if user['role'] == 'admin' else 0
-            return redirect(url_for('admin_dashboard') if user['role'] == 'admin' else url_for('user_dashboard'))
+            session['role'] = user.get('role', 'user')
+            session['is_admin'] = 1 if session['role'] == 'admin' else 0
+            return redirect(url_for('admin_dashboard') if session['role'] == 'admin' else url_for('user_dashboard'))
         flash("Incorrect email or password.", "danger")
     return render_template('login.html')
 
@@ -125,8 +154,7 @@ def logout():
     flash("Logged out successfully.", "info")
     return redirect(url_for('login'))
 
-# ------------------ DASHBOARDS ------------------
-
+# Dashboards
 @app.route('/user')
 def user_dashboard():
     if session.get('loggedin') and session.get('role') == 'user':
@@ -151,8 +179,7 @@ def admin_dashboard():
         return render_template('admin_dashboard.html', users=users, products=products, orders=orders, all_products=all_products)
     return redirect(url_for('login'))
 
-# ------------------ PRODUCTS ------------------
-
+# Products
 @app.route('/products')
 def view_products():
     cur = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
@@ -168,9 +195,10 @@ def add_product():
             description = request.form['description']
             price = request.form['price']
             stock = request.form['stock']
-            file = request.files['image']
+            file = request.files.get('image')
             if file and allowed_file(file.filename):
                 filename = secure_filename(file.filename)
+                os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
                 file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
                 cur = mysql.connection.cursor()
                 cur.execute("INSERT INTO products (name, description, price, stock, image) VALUES (%s, %s, %s, %s, %s)",
@@ -191,9 +219,10 @@ def edit_product(product_id):
             description = request.form['description']
             price = request.form['price']
             stock = request.form['stock']
-            file = request.files['image']
+            file = request.files.get('image')
             if file and allowed_file(file.filename):
                 filename = secure_filename(file.filename)
+                os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
                 file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
                 cur.execute("UPDATE products SET name=%s, description=%s, price=%s, stock=%s, image=%s WHERE id=%s",
                             (name, description, price, stock, filename, product_id))
@@ -227,8 +256,7 @@ def admin_products():
         return render_template('admin_products.html', products=products)
     return redirect(url_for('login'))
 
-# ------------------ CART & ORDERS ------------------
-
+# Cart & orders
 @app.route('/add_to_cart/<int:product_id>')
 def add_to_cart(product_id):
     if 'cart' not in session:
@@ -326,7 +354,6 @@ def admin_orders():
         raw_orders = cur.fetchall()
         cur.close()
 
-        # Group products by order ID
         orders = {}
         for row in raw_orders:
             oid = row['order_id']
@@ -366,7 +393,6 @@ def invoice(order_id):
     """, (order_id,))
     order = cur.fetchone()
 
-    # Add formatted invoice number
     invoice_number = f"INV-{order_id:04d}"
 
     cur.execute("""
@@ -375,15 +401,13 @@ def invoice(order_id):
         JOIN products p ON oi.product_id = p.id
         WHERE oi.order_id = %s
     """, (order_id,))
-    items = cur.fetchall()
+    items = cur.fetchall() or []
 
-    total = sum(item['line_total'] for item in items)
+    total = sum(item.get('line_total', 0) for item in items)
 
     return render_template('invoice.html', order=order, items=items, total=total, invoice_number=invoice_number)
 
-
-# ------------------ USER MANAGEMENT ------------------
-
+# Admin user management
 @app.route('/admin/users')
 def admin_users():
     if session.get('loggedin') and session.get('is_admin') == 1:
@@ -419,7 +443,7 @@ def delete_user(user_id):
         return redirect(url_for('admin_users'))
     return redirect(url_for('login'))
 
-# ------------------ MAIN ------------------
-
+# -------------------- RUN --------------------
 if __name__ == '__main__':
-    app.run(debug=True)
+    # for local development
+    app.run(debug=True, host='0.0.0.0')

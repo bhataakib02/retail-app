@@ -4,5 +4,5 @@ Flask-SQLAlchemy==3.0.5
 SQLAlchemy==2.0.22
 PyMySQL==1.0.3
 gunicorn==21.2.0
-
+cryptography
 
