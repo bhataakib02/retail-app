@@ -1,32 +1,91 @@
+# ===== START: Compatibility shim + Flask app initialization =====
+import os
+from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify, g
+from werkzeug.utils import secure_filename
 
+# Make PyMySQL present a MySQLdb-compatible module (pure-Python driver)
 import pymysql
 pymysql.install_as_MySQLdb()
 
-import os
-from werkzeug.utils import secure_filename
-from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify
+# Optional: if you want SQLAlchemy available for future migration
+from flask_sqlalchemy import SQLAlchemy
 
-# Now import the Flask-MySQLdb wrapper (it will find MySQLdb provided by PyMySQL)
-from flask_mysqldb import MySQL
-import MySQLdb.cursors
-
+# Single Flask app instance (only once)
 app = Flask(__name__)
-app.secret_key = 'your_secret_key'
+app.secret_key = os.environ.get("SECRET_KEY", "change_me_in_prod")
 
-# File upload config
+# File upload config (keep as before)
 UPLOAD_FOLDER = 'static/images/products'
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
+# SQLAlchemy config (optional, used later)
+database_url = os.environ.get("DATABASE_URL")
+if database_url:
+    app.config["SQLALCHEMY_DATABASE_URI"] = database_url
+else:
+    # fallback local config (not used in Vercel; prefer DATABASE_URL in production)
+    DB_USER = os.environ.get("DB_USER", "root")
+    DB_PASS = os.environ.get("DB_PASS", "")
+    DB_HOST = os.environ.get("DB_HOST", "127.0.0.1")
+    DB_NAME = os.environ.get("DB_NAME", "retaildb")
+    app.config["SQLALCHEMY_DATABASE_URI"] = f"mysql+pymysql://{DB_USER}:{DB_PASS}@{DB_HOST}:3306/{DB_NAME}"
+app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+db = SQLAlchemy(app)
+
+# Legacy DB connection factory (returns a MySQLdb-compatible connection provided by PyMySQL shim)
+def get_legacy_db_conn():
+    import MySQLdb
+    conn = MySQLdb.connect(
+        host=os.environ.get("DB_HOST", "127.0.0.1"),
+        user=os.environ.get("DB_USER", "root"),
+        passwd=os.environ.get("DB_PASS", ""),
+        db=os.environ.get("DB_NAME", "retail_db"),
+        connect_timeout=5,
+        charset="utf8mb4",
+        use_unicode=True
+    )
+    return conn
+
+# Create a request-scoped connection and close it automatically
+def get_request_conn():
+    """
+    Returns a single connection per request stored in flask.g
+    so mysql.connection.cursor() -> uses same connection for commit/close etc.
+    """
+    if not hasattr(g, "db_conn"):
+        g.db_conn = get_legacy_db_conn()
+    return g.db_conn
+
+@app.teardown_appcontext
+def close_request_conn(exception=None):
+    conn = g.pop("db_conn", None)
+    try:
+        if conn:
+            conn.close()
+    except Exception:
+        pass
+
+# Compatibility object: exposes .connection property to match old flask_mysqldb usage
+class MySQLCompat:
+    @property
+    def connection(self):
+        return get_request_conn()
+
+# instantiate compatibility object used throughout your code as `mysql`
+mysql = MySQLCompat()
+
+# helper: allowed file
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
-# MySQL config
-app.config['MYSQL_HOST'] = 'localhost'
-app.config['MYSQL_USER'] = 'root'
-app.config['MYSQL_PASSWORD'] = '1234'
-app.config['MYSQL_DB'] = 'retail_db'
-mysql = MySQL(app)
+# simple health route for quick checks
+@app.route("/_health")
+def _health():
+    return {"status": "ok"}, 200
+
+# ===== END: Compatibility shim + Flask app initialization =====
+
 
 # ------------------ AUTH ------------------
 
