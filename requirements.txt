@@ -1,4 +1,6 @@
 Flask==2.2.5
-PyMySQL==1.0.3
 Werkzeug==2.2.3
-Flask-MySQLdb==1.0.1
+Flask-SQLAlchemy==3.0.5
+SQLAlchemy==2.0.22
+PyMySQL==1.0.3
+gunicorn==21.2.0
