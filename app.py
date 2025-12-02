@@ -5,6 +5,7 @@ pymysql.install_as_MySQLdb()   # makes a MySQLdb module available (pure Python)
 
 from flask import Flask, g
 from flask_sqlalchemy import SQLAlchemy
+from flask import Flask, render_template, request, redirect, session, url_for
 
 # create Flask app
 app = Flask(__name__)
