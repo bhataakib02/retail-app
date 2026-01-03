@@ -40,20 +40,20 @@ git push origin main
    - **Install Command**: `pip install -r requirements.txt`
 5. **Add Environment Variables** (IMPORTANT!):
    - Click **Environment Variables** before deploying
-   - Add `DATABASE_URL`:
-     ```
-     postgresql://postgres:B!@ckB1rD@$&85@db.wfcxwbmxvseweajyenzj.supabase.co:5432/postgres
-     ```
-     ⚠️ **Note**: If your password has special characters, you may need to URL-encode them:
-     - `!` = `%21`
-     - `@` = `%40` (but NOT the @ before the domain)
-     - `$` = `%24`
-     - `&` = `%26`
-     
-     So the encoded version would be:
+   - Add `DATABASE_URL` (USE THE URL-ENCODED VERSION):
      ```
      postgresql://postgres:B%21%40ckB1rD%40%24%2685@db.wfcxwbmxvseweajyenzj.supabase.co:5432/postgres
      ```
+     ⚠️ **CRITICAL**: Your password contains special characters (`!@$&`) that MUST be URL-encoded:
+     - `!` = `%21`
+     - `@` = `%40` (the @ in the password, NOT the @ before the domain)
+     - `$` = `%24`
+     - `&` = `%26`
+     
+     **DO NOT USE**: `postgresql://postgres:B!@ckB1rD@$&85@db...` (this will fail!)
+     **USE INSTEAD**: `postgresql://postgres:B%21%40ckB1rD%40%24%2685@db...`
+     
+     To encode your password, run: `python encode_password.py`
    
    - Add `SECRET_KEY`:
      ```
