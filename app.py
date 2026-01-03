@@ -56,7 +56,11 @@ def get_db_conn():
     """
     Return a psycopg2 connection for raw SQL queries.
     Reads DB connection info from DATABASE_URL environment variable.
+    This is called lazily on first request, not at import time.
     """
+    if not database_url:
+        raise ValueError("DATABASE_URL environment variable is not set")
+    
     try:
         # Parse the URL using SQLAlchemy's make_url which handles URL encoding
         url_obj = make_url(database_url)
@@ -69,25 +73,23 @@ def get_db_conn():
             "database": url_obj.database or "postgres",
         }
         # Add SSL mode for Supabase
-        if "supabase.co" in database_url:
+        if "supabase.co" in database_url or "supabase" in (url_obj.host or ""):
             conn_params["sslmode"] = "require"
         conn = psycopg2.connect(**conn_params)
         return conn
     except Exception as e:
-        # Fallback: use environment variables if URL parsing fails
+        # Fallback: try direct connection string if URL parsing fails
         try:
-            conn = psycopg2.connect(
-                host=os.environ.get("DB_HOST", "localhost"),
-                port=int(os.environ.get("DB_PORT", 5432)),
-                user=os.environ.get("DB_USER", "postgres"),
-                password=os.environ.get("DB_PASS", ""),
-                database=os.environ.get("DB_NAME", "retail_db"),
-                sslmode="require" if os.environ.get("DATABASE_URL", "").find("supabase.co") != -1 else "prefer"
-            )
+            if "supabase.co" in database_url or "supabase" in database_url:
+                conn = psycopg2.connect(database_url, sslmode="require")
+            else:
+                conn = psycopg2.connect(database_url)
             return conn
         except Exception as db_error:
             # Log error but don't fail silently in production
+            import traceback
             print(f"Database connection error: {db_error}")
+            print(traceback.format_exc())
             raise
 
 def get_request_conn():
