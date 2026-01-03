@@ -18,6 +18,9 @@ from psycopg2.extras import RealDictCursor
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "change_me_in_prod")
 
+# Disable debug mode in production
+app.config['DEBUG'] = os.environ.get('FLASK_DEBUG', 'False').lower() == 'true'
+
 # -------------------- DATABASE / SQLALCHEMY CONFIG --------------------
 # Priority: use DATABASE_URL (Supabase connection string)
 database_url = os.environ.get("DATABASE_URL")
@@ -482,5 +485,7 @@ def delete_user(user_id):
 
 # -------------------- RUN --------------------
 if __name__ == '__main__':
-    # for local development
-    app.run(debug=True, host='0.0.0.0')
+    # for local development only
+    # In production (Vercel), the app is served via api/index.py
+    debug_mode = os.environ.get('FLASK_DEBUG', 'True').lower() == 'true'
+    app.run(debug=debug_mode, host='0.0.0.0', port=5000)

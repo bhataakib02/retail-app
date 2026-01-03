@@ -1,4 +1,7 @@
-# Vercel serverless function handler for Flask app
+"""
+Vercel serverless function handler for Flask app
+This file exports the Flask application as a WSGI handler for Vercel
+"""
 import sys
 import os
 
@@ -7,19 +10,10 @@ parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
-try:
-    from app import app
-    # Export the Flask app for Vercel (WSGI application)
-    handler = app
-except Exception as e:
-    # If import fails, create a minimal error handler
-    from flask import Flask
-    error_app = Flask(__name__)
-    
-    @error_app.route('/<path:path>')
-    @error_app.route('/')
-    def error_handler(path=''):
-        return f'Error loading application: {str(e)}', 500
-    
-    handler = error_app
+# Import the Flask app - this will initialize the application
+from app import app
+
+# Export the Flask app as the handler for Vercel
+# Vercel's Python runtime expects a WSGI application
+handler = app
 
