@@ -32,11 +32,18 @@ if not database_url:
     database_url = f"postgresql://{DB_USER}:{encoded_password}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
 
 # Configure Flask-SQLAlchemy for PostgreSQL/Supabase
-app.config["SQLALCHEMY_DATABASE_URI"] = database_url
-app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
-    "connect_args": {"sslmode": "require"} if "supabase.co" in database_url else {}
-}
+if database_url:
+    app.config["SQLALCHEMY_DATABASE_URI"] = database_url
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
+        "connect_args": {"sslmode": "require"} if "supabase.co" in database_url else {},
+        "pool_pre_ping": True,  # Verify connections before using
+        "pool_recycle": 300,  # Recycle connections after 5 minutes
+    }
+else:
+    # Fallback for development
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///temp.db"
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
 # init SQLAlchemy
 db = SQLAlchemy(app)
