@@ -10,6 +10,7 @@ from werkzeug.utils import secure_filename
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import text, create_engine
 from sqlalchemy.engine import make_url
+from urllib.parse import urlparse, quote_plus
 import psycopg2
 from psycopg2.extras import RealDictCursor
 
@@ -26,7 +27,9 @@ if not database_url:
     DB_HOST = os.environ.get("DB_HOST", "localhost")
     DB_PORT = os.environ.get("DB_PORT", "5432")
     DB_NAME = os.environ.get("DB_NAME", "retail_db")
-    database_url = f"postgresql://{DB_USER}:{DB_PASS}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+    # URL encode password to handle special characters
+    encoded_password = quote_plus(DB_PASS)
+    database_url = f"postgresql://{DB_USER}:{encoded_password}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
 
 # Configure Flask-SQLAlchemy for PostgreSQL/Supabase
 app.config["SQLALCHEMY_DATABASE_URI"] = database_url
@@ -43,30 +46,36 @@ def get_db_conn():
     """
     Return a psycopg2 connection for raw SQL queries.
     Reads DB connection info from DATABASE_URL environment variable.
+    Uses the connection string directly for psycopg2 (it handles URL parsing internally).
     """
-    # Parse the database URL to extract connection parameters
     try:
-        url_obj = make_url(database_url)
-        conn = psycopg2.connect(
-            host=url_obj.host or "localhost",
-            port=url_obj.port or 5432,
-            user=url_obj.username or "postgres",
-            password=url_obj.password or "",
-            database=url_obj.database or "postgres",
-            sslmode="require" if "supabase.co" in database_url else "prefer"
-        )
+        # psycopg2 can accept connection strings directly, which handles URL encoding automatically
+        conn = psycopg2.connect(database_url, sslmode="require" if "supabase.co" in database_url else "prefer")
         return conn
     except Exception as e:
-        # Fallback to environment variables if URL parsing fails
-        conn = psycopg2.connect(
-            host=os.environ.get("DB_HOST", "localhost"),
-            port=int(os.environ.get("DB_PORT", 5432)),
-            user=os.environ.get("DB_USER", "postgres"),
-            password=os.environ.get("DB_PASS", ""),
-            database=os.environ.get("DB_NAME", "retail_db"),
-            sslmode="require" if os.environ.get("DATABASE_URL", "").find("supabase.co") != -1 else "prefer"
-        )
-        return conn
+        # Fallback: try parsing the URL manually if direct connection fails
+        try:
+            url_obj = make_url(database_url)
+            conn = psycopg2.connect(
+                host=url_obj.host or "localhost",
+                port=url_obj.port or 5432,
+                user=url_obj.username or "postgres",
+                password=url_obj.password or "",
+                database=url_obj.database or "postgres",
+                sslmode="require" if "supabase.co" in database_url else "prefer"
+            )
+            return conn
+        except Exception:
+            # Last resort: use environment variables
+            conn = psycopg2.connect(
+                host=os.environ.get("DB_HOST", "localhost"),
+                port=int(os.environ.get("DB_PORT", 5432)),
+                user=os.environ.get("DB_USER", "postgres"),
+                password=os.environ.get("DB_PASS", ""),
+                database=os.environ.get("DB_NAME", "retail_db"),
+                sslmode="require" if os.environ.get("DATABASE_URL", "").find("supabase.co") != -1 else "prefer"
+            )
+            return conn
 
 def get_request_conn():
     if not hasattr(g, "db_conn"):
