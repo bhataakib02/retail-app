@@ -46,27 +46,26 @@ def get_db_conn():
     """
     Return a psycopg2 connection for raw SQL queries.
     Reads DB connection info from DATABASE_URL environment variable.
-    Uses the connection string directly for psycopg2 (it handles URL parsing internally).
     """
     try:
-        # psycopg2 can accept connection strings directly, which handles URL encoding automatically
-        conn = psycopg2.connect(database_url, sslmode="require" if "supabase.co" in database_url else "prefer")
+        # Parse the URL using SQLAlchemy's make_url which handles URL encoding
+        url_obj = make_url(database_url)
+        # Build connection parameters for psycopg2
+        conn_params = {
+            "host": url_obj.host or "localhost",
+            "port": url_obj.port or 5432,
+            "user": url_obj.username or "postgres",
+            "password": url_obj.password or "",
+            "database": url_obj.database or "postgres",
+        }
+        # Add SSL mode for Supabase
+        if "supabase.co" in database_url:
+            conn_params["sslmode"] = "require"
+        conn = psycopg2.connect(**conn_params)
         return conn
     except Exception as e:
-        # Fallback: try parsing the URL manually if direct connection fails
+        # Fallback: use environment variables if URL parsing fails
         try:
-            url_obj = make_url(database_url)
-            conn = psycopg2.connect(
-                host=url_obj.host or "localhost",
-                port=url_obj.port or 5432,
-                user=url_obj.username or "postgres",
-                password=url_obj.password or "",
-                database=url_obj.database or "postgres",
-                sslmode="require" if "supabase.co" in database_url else "prefer"
-            )
-            return conn
-        except Exception:
-            # Last resort: use environment variables
             conn = psycopg2.connect(
                 host=os.environ.get("DB_HOST", "localhost"),
                 port=int(os.environ.get("DB_PORT", 5432)),
@@ -76,6 +75,10 @@ def get_db_conn():
                 sslmode="require" if os.environ.get("DATABASE_URL", "").find("supabase.co") != -1 else "prefer"
             )
             return conn
+        except Exception as db_error:
+            # Log error but don't fail silently in production
+            print(f"Database connection error: {db_error}")
+            raise
 
 def get_request_conn():
     if not hasattr(g, "db_conn"):
